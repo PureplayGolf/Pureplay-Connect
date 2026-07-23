@@ -96,7 +96,7 @@ Host to device:
 | 0x81 | HelloAck | host acknowledgement of the handshake |
 | 0x82 | Ping | keepalive request (device replies with Heartbeat) |
 | 0x90 | SetClubInfo | selected club and handedness |
-| 0x91 | SetArm | arm / disarm ball detection |
+| 0x91 | SetDetect | arm / disarm ball detection |
 | 0x92 | SetBallType | marker / markerless |
 
 An unknown Type should be answered with an Error and otherwise ignored (forward
@@ -218,7 +218,7 @@ Push this on every ready state transition (do not wait for the next heartbeat).
 | Message | Payload |
 |---|---|
 | SetClubInfo (0x90) | Handedness (byte), Club (byte) - both in section 9 |
-| SetArm (0x91) | Arm (byte): 0 = disarm, 1 = arm |
+| SetDetect (0x91) | Mode (byte): 0 = disarm, 1 = arm |
 | SetBallType (0x92) | BallType (byte, section 9) - a single mode device ignores it |
 | Ping (0x82) | (empty) - host sends after about 4 s of device silence; the device must reply with a Heartbeat |
 
@@ -260,7 +260,7 @@ Device                         Host
   |  --- ReadyState -------->   |
   |  --- BallData(ShotId=n) ->  |
   |  --- ClubData(ShotId=n) ->  |
-  |  <--------- SetArm / ... -  |   (host commands, any time)
+  |  <------ SetDetect / ... -  |   (host commands, any time)
   |  <------------- Ping -----  |   (host, after ~4 s of silence)
   |  --- Heartbeat -------->    |   (device reply; >8 s silence drops the link)
 ```
