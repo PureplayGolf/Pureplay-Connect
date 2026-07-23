@@ -18,7 +18,7 @@ What this example does, in order:
    (`BallData` + `ClubData`).
 4. Replies to every `Ping` with a `Heartbeat` — this is the one hard requirement
    that keeps the link alive.
-5. Logs the host's commands (`SetArm` / `SetClubInfo` / `SetBallType`).
+5. Logs the host's commands (`SetDetect` / `SetClubInfo` / `SetBallType`).
 
 ### Build & run
 
@@ -51,7 +51,7 @@ static const uint8_t MAGIC0 = 0x50, MAGIC1 = 0x4C, WIRE_VERSION = 1;
 enum : uint8_t {
     MSG_HELLO = 0x01, MSG_HEARTBEAT = 0x02, MSG_BALL = 0x10, MSG_CLUB = 0x11,
     MSG_READY = 0x12, MSG_ERROR = 0x1F, MSG_HELLOACK = 0x81, MSG_PING = 0x82,
-    MSG_SETCLUB = 0x90, MSG_SETARM = 0x91, MSG_SETBALL = 0x92
+    MSG_SETCLUB = 0x90, MSG_SETDETECT = 0x91, MSG_SETBALL = 0x92
 };
 
 // ---- CRC32C: catches corrupted/truncated frames so they're dropped, not
@@ -191,8 +191,8 @@ int main() {
                 }
             } else if (type == MSG_PING) {
                 sendAll(fd, buildHeartbeat());     // MUST answer every Ping (keeps the link alive)
-            } else if (type == MSG_SETARM) {
-                printf("host: SetArm\n");
+            } else if (type == MSG_SETDETECT) {
+                printf("host: SetDetect\n");
             } else if (type == MSG_SETCLUB) {
                 printf("host: SetClubInfo\n");
             } else if (type == MSG_SETBALL) {

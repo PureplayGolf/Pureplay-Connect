@@ -18,7 +18,7 @@ What this example does, in order:
    (`BallData` + `ClubData`).
 4. Replies to every `Ping` with a `Heartbeat` — the one hard requirement that
    keeps the link alive.
-5. Logs the host's commands (`SetArm` / `SetClubInfo` / `SetBallType`).
+5. Logs the host's commands (`SetDetect` / `SetClubInfo` / `SetBallType`).
 
 ### Run
 
@@ -40,7 +40,7 @@ const net = require('net');
 const MAGIC0 = 0x50, MAGIC1 = 0x4C, WIRE_VERSION = 1;
 const MSG = {
   HELLO: 0x01, HEARTBEAT: 0x02, BALL: 0x10, CLUB: 0x11, READY: 0x12,
-  ERROR: 0x1F, HELLOACK: 0x81, PING: 0x82, SETCLUB: 0x90, SETARM: 0x91, SETBALL: 0x92,
+  ERROR: 0x1F, HELLOACK: 0x81, PING: 0x82, SETCLUB: 0x90, SETDETECT: 0x91, SETBALL: 0x92,
 };
 
 // ---- CRC32C: catches corrupted/truncated frames so they're dropped, not
@@ -149,7 +149,7 @@ sock.on('data', (chunk) => {
       }
     } else if (type === MSG.PING) {
       sock.write(buildHeartbeat());        // MUST answer every Ping (keeps the link alive)
-    } else if (type === MSG.SETARM)  { console.log('host: SetArm'); }
+    } else if (type === MSG.SETDETECT)  { console.log('host: SetDetect'); }
     else if (type === MSG.SETCLUB) { console.log('host: SetClubInfo'); }
     else if (type === MSG.SETBALL) { console.log('host: SetBallType'); }
   }

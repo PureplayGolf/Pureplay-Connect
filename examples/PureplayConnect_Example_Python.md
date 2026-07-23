@@ -18,7 +18,7 @@ What this example does, in order:
    (`BallData` + `ClubData`).
 4. Replies to every `Ping` with a `Heartbeat` — the one hard requirement that
    keeps the link alive.
-5. Logs the host's commands (`SetArm` / `SetClubInfo` / `SetBallType`).
+5. Logs the host's commands (`SetDetect` / `SetClubInfo` / `SetBallType`).
 
 ### Run
 
@@ -39,7 +39,7 @@ import struct
 # MAGIC0/MAGIC1 spell "PL" (Pureplay) — the two bytes every frame starts with, so
 # a reader can find/resync to frame boundaries and reject non-PPConnect data.
 MAGIC0, MAGIC1, WIRE_VERSION = 0x50, 0x4C, 1
-HELLO, HEARTBEAT, BALL, CLUB, READY, ERROR, HELLOACK, PING, SETCLUB, SETARM, SETBALL = (
+HELLO, HEARTBEAT, BALL, CLUB, READY, ERROR, HELLOACK, PING, SETCLUB, SETDETECT, SETBALL = (
     0x01, 0x02, 0x10, 0x11, 0x12, 0x1F, 0x81, 0x82, 0x90, 0x91, 0x92
 )
 
@@ -145,8 +145,8 @@ def main() -> None:
                     shot_sent = True
             elif msg_type == PING:
                 sock.sendall(build_heartbeat())              # MUST answer every Ping (keeps the link alive)
-            elif msg_type == SETARM:
-                print("host: SetArm")
+            elif msg_type == SETDETECT:
+                print("host: SetDetect")
             elif msg_type == SETCLUB:
                 print("host: SetClubInfo")
             elif msg_type == SETBALL:
