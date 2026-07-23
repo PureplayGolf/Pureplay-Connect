@@ -11,7 +11,7 @@ data to Pureplay over TCP on port 9760.
 
 - Roles. Two peers: the device (the launch monitor) and the host (Pureplay).
 - Transport. The device connects to the host over TCP: the host listens and the
-  device connects to it. For other transport layers, contact the Pureplay dev
+  device connects to it. For other transport layers (BTLE, USB etc), contact the Pureplay dev
   team directly.
 - Two data streams, paired downstream. Ball flight and club delivery are separate
   messages correlated by a shared ShotId. A ball-only monitor simply never sends
