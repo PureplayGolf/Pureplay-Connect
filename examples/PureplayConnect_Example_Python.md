@@ -18,7 +18,8 @@ What this example does, in order:
    (`BallData` + `ClubData`).
 4. Replies to every `Ping` with a `Heartbeat` — the one hard requirement that
    keeps the link alive.
-5. Logs the host's commands (`SetDetect` / `SetClubInfo` / `SetBallType`).
+5. Logs the host's commands (`SetDetect` / `SetClubInfo` / `SetBallType` /
+   `SetShotContext`), and acknowledges `SetStrictMode`.
 
 ### Run
 
@@ -39,9 +40,8 @@ import struct
 # MAGIC0/MAGIC1 spell "PL" (Pureplay) — the two bytes every frame starts with, so
 # a reader can find/resync to frame boundaries and reject non-PPConnect data.
 MAGIC0, MAGIC1, WIRE_VERSION = 0x50, 0x4C, 1
-HELLO, HEARTBEAT, BALL, CLUB, READY, ERROR, HELLOACK, PING, SETCLUB, SETDETECT, SETBALL = (
-    0x01, 0x02, 0x10, 0x11, 0x12, 0x1F, 0x81, 0x82, 0x90, 0x91, 0x92
-)
+HELLO, HEARTBEAT, STRICTACK, BALL, CLUB, READY, ERROR = 0x01, 0x02, 0x04, 0x10, 0x11, 0x12, 0x1F
+HELLOACK, PING, SETCLUB, SETDETECT, SETBALL, SETSHOT, SETSTRICT = 0x81, 0x82, 0x90, 0x91, 0x92, 0x93, 0x94
 
 
 # ---- CRC32C: catches corrupted/truncated frames so they're dropped, not
@@ -128,7 +128,7 @@ def main() -> None:
             want = crc32c(bytes(buf[:7 + length]))
             got = struct.unpack("<I", bytes(buf[7 + length:7 + length + 4]))[0]
             msg_type = buf[4]
-            # payload = bytes(buf[7:7 + length])  # (decode here if you consume host data)
+            payload = bytes(buf[7:7 + length])
             del buf[:total]                                  # consume the frame
 
             if want != got:
@@ -151,6 +151,14 @@ def main() -> None:
                 print("host: SetClubInfo")
             elif msg_type == SETBALL:
                 print("host: SetBallType")
+            elif msg_type == SETSHOT and len(payload) >= 4:
+                # Distance to the target in metres; <= 0 means unknown.
+                print("host: SetShotContext %.1f m" % struct.unpack("<f", payload[:4])[0])
+            elif msg_type == SETSTRICT:
+                # An event or tournament round: measured data only. 1 = accepted; a device
+                # that cannot comply sends 0 + a reason and the host closes the link.
+                sock.sendall(frame(STRICTACK, bytes([1]) + pstr("")))
+                print("host: SetStrictMode", payload[0] if payload else None, "-> accepted")
 
 
 if __name__ == "__main__":
@@ -163,6 +171,14 @@ if __name__ == "__main__":
   struck, not on handshake. Increment `shot_id` per swing; a `ClubData` must reuse
   its `BallData`'s `shot_id`.
 - Send only the fields you measure: clear the corresponding `ValidMask` bit and
-  the host fills gaps (e.g. it derives spin axis / total spin if you dont send it from back+side).
+  the host fills gaps (e.g. it derives spin axis / total spin if you don't send them from back+side).
+- `SetShotContext` arrives just before each `SetDetect(1)` with the distance to the
+  pin (or drill target) in metres. Use it to pick a short-game capture mode if
+  your device has one; ignore it otherwise.
+- `SetStrictMode` (0x94) arrives after the handshake whenever an event or
+  tournament round is in progress, and again after every reconnect. Answer with
+  `StrictModeAck` (0x04) within 5 s: `1` promises measured data only (no
+  clamping, smoothing, interpolation or synthesised fields); `0` plus a reason
+  if you cannot, in which case the host drops the link.
 - Push a `ReadyState` (0x12) whenever ball detection changes.
 - Keep answering `Ping` — >8 s of silence drops the link.

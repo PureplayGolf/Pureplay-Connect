@@ -17,7 +17,7 @@ data to Pureplay over TCP on port 9760.
   messages correlated by a shared ShotId. A ball-only monitor simply never sends
   club messages.
 - Bidirectional. The device streams telemetry and state; the host sends commands
-  (club selection, arm/disarm, ball type).
+  (club selection, arm/disarm, ball type, shot context, strict mode).
 - Optional fields are first class. Every telemetry message carries a validity
   bitmask so a device sends only what it actually measured.
 
@@ -36,6 +36,7 @@ data to Pureplay over TCP on port 9760.
   - speed - m/s
   - angles - degrees
   - spin - RPM
+  - distance - metres
   - face impact point - millimetres from the sweet spot
 - Sign conventions:
 
@@ -84,6 +85,7 @@ Device to host:
 |---|---|---|
 | 0x01 | Hello | device identity and capabilities |
 | 0x02 | Heartbeat | liveness; connection state, ready state, battery snapshot |
+| 0x04 | StrictModeAck | reply to SetStrictMode: accepted or refused (section 5.7) |
 | 0x10 | BallData | ball flight reading |
 | 0x11 | ClubData | club reading (optional per shot) |
 | 0x12 | ReadyState | ready state transition |
@@ -98,6 +100,8 @@ Host to device:
 | 0x90 | SetClubInfo | selected club and handedness |
 | 0x91 | SetDetect | arm / disarm ball detection |
 | 0x92 | SetBallType | marker / markerless |
+| 0x93 | SetShotContext | the coming shot's distance to the target (section 5.5) |
+| 0x94 | SetStrictMode | an event or tournament round is in progress; the device must acknowledge (section 5.7) |
 
 An unknown Type should be answered with an Error and otherwise ignored (forward
 compatibility).
@@ -220,7 +224,19 @@ Push this on every ready state transition (do not wait for the next heartbeat).
 | SetClubInfo (0x90) | Handedness (byte), Club (byte) - both in section 9 |
 | SetDetect (0x91) | Mode (byte): 0 = disarm, 1 = arm |
 | SetBallType (0x92) | BallType (byte, section 9) - a single mode device ignores it |
+| SetShotContext (0x93) | DistanceToTargetM (float) - see below |
 | Ping (0x82) | (empty) - host sends after about 4 s of device silence; the device must reply with a Heartbeat |
+
+SetShotContext. The straight line distance, in metres, from the ball to the target
+of the coming shot: the pin on a course, or the drill target in a practice mode.
+The host sends it immediately before each SetDetect(1), so the sequence a device
+sees for every shot is SetClubInfo (when the club changed), SetShotContext,
+SetDetect(1). A value of 0 or less (or NaN) means the host does not know the
+distance. The message is advisory: a device that measures the same way for every
+shot ignores it. It exists for devices whose capture mode depends on shot length
+(a radar that switches to a chipping or putting mode within a few tens of metres,
+say) so they can select the mode before the ball is struck instead of guessing
+from the club. Future fields append after the distance (section 6).
 
 ### 5.6 Error (0x1F)
 
@@ -229,7 +245,47 @@ Push this on every ready state transition (do not wait for the next heartbeat).
 | 2 | Code (integer) |
 | 1+n | Message (string) |
 
-Code 0 is a generic error. Other values are reserved.
+Code 0 is a generic error. Code 2 is StrictModeRequired (section 5.7). Other
+values are reserved.
+
+### 5.7 Strict mode (SetStrictMode 0x94 / StrictModeAck 0x04)
+
+Strict mode tells the device that the shots it is about to deliver count for an
+event or tournament: a round whose score is recorded on the Pureplay platform
+against other players. While it is on, the device must deliver measured data
+only: no clamping, smoothing, interpolation or substitution of any field it
+reports, and nothing synthesised for a field it did not measure (leave the
+ValidMask bit clear instead). A device that cannot meet that, or does not
+implement the message, must say so; the host will not take shots from it.
+
+| Message | Payload |
+|---|---|
+| SetStrictMode (0x94, host to device) | bStrict (byte): 1 = a recorded round is in progress, 0 = it is over |
+| StrictModeAck (0x04, device to host) | bAccepted (byte, 0 or 1), Reason (string: empty when accepted, a short human readable reason when refused) |
+
+Rules:
+
+- The host sends SetStrictMode(1) when a recorded round begins, and again after
+  every handshake (Hello then HelloAck) while one is in progress, so a disconnect
+  and reconnect always repeats the exchange.
+- The device answers every SetStrictMode with exactly one StrictModeAck.
+- The host accepts BallData and ClubData only after StrictModeAck(1) on the
+  current link. Telemetry that arrives between SetStrictMode(1) and the ack is
+  discarded.
+- If the device refuses, or does not send a well formed StrictModeAck within 5
+  seconds (a generic Error reply from a device that does not know the message
+  counts as silence), the host sends Error(2, StrictModeRequired) and closes the
+  link. The device may reconnect; the handshake and the strict mode exchange then
+  run again.
+- SetStrictMode(0) ends the gate. The device acknowledges it the same way; the
+  host does not wait for that ack.
+- A StrictModeAck with nothing outstanding is ignored.
+- Strict mode is per link: a device starts every new link with it off and waits
+  for the host's SetStrictMode(1). Acceptance never carries across a reconnect,
+  and a device that was in strict mode when the link dropped must not assume it
+  still is.
+- A device that always delivers raw measurements simply answers 1 to every
+  SetStrictMode.
 
 Enumerations are wire frozen. Club, Handedness, BallType, ConnectionState and
 ReadyState are serialised as single byte values in section 9. Adding new
@@ -243,7 +299,8 @@ enumerators is allowed; renumbering existing ones is a major version change.
   common version.
 - Appending a new optional telemetry field: add it after the existing fields and
   define a new ValidMask bit. Old receivers read the prefix they know and use
-  Length to skip the tail - no version bump needed.
+  Length to skip the tail - no version bump needed. The same holds for command
+  payloads such as SetShotContext.
 - Reordering or resizing existing fields, or renumbering any enum below, is a
   breaking change and requires a major version bump.
 
@@ -257,12 +314,19 @@ Device                         Host
   |  --- Hello ------------->   |
   |  <------------ HelloAck --  |
   |                             |   Connected
+  |  <---- SetStrictMode(1) --  |   (host, only while a recorded round is in progress)
+  |  --- StrictModeAck(1) -->   |   (refusal or 5 s silence: Error(2), link closed)
   |  --- ReadyState -------->   |
+  |  <------- SetClubInfo ----  |   (host, when the club changes)
+  |  <----- SetShotContext ---  |   (host, before every arm)
+  |  <------- SetDetect(1) ---  |
   |  --- BallData(ShotId=n) ->  |
   |  --- ClubData(ShotId=n) ->  |
-  |  <------ SetDetect / ... -  |   (host commands, any time)
+  |  <------- SetDetect(0) ---  |   (ball in flight)
   |  <------------- Ping -----  |   (host, after ~4 s of silence)
   |  --- Heartbeat -------->    |   (device reply; >8 s silence drops the link)
+  |  <---- SetStrictMode(0) --  |   (host, when the recorded round ends)
+  |  --- StrictModeAck(1) -->   |
 ```
 
 ---
@@ -352,4 +416,34 @@ Ping - empty payload:
 
 ```
 50 4C 01 00 82 00 00 D0 A9 7C 7D
+```
+
+SetShotContext - 142.5 m to the pin, and distance unknown (0.0):
+
+```
+50 4C 01 00 93 04 00 00 80 0E 43 6B C8 7B 66
+50 4C 01 00 93 04 00 00 00 00 00 EA C3 AC 4B
+```
+
+SetStrictMode - on (1) and off (0):
+
+```
+50 4C 01 00 94 01 00 01 61 7C D8 FB
+50 4C 01 00 94 01 00 00 62 FF B3 09
+```
+
+StrictModeAck - accepted with an empty reason, and refused with reason
+"Not supported":
+
+```
+50 4C 01 00 04 02 00 01 00 FA A6 89 42
+50 4C 01 00 04 0F 00 00 0D 4E 6F 74 20 73 75 70 70 6F 72 74 65 64 1B 9D FD 27
+```
+
+Error - code 2 StrictModeRequired, message "Strict mode required" (what the host
+sends before closing the link):
+
+```
+50 4C 01 00 1F 17 00 02 00 14 53 74 72 69 63 74 20 6D 6F 64 65 20 72 65 71 75
+69 72 65 64 31 B3 14 C5
 ```

@@ -18,7 +18,8 @@ What this example does, in order:
    (`BallData` + `ClubData`).
 4. Replies to every `Ping` with a `Heartbeat` — this is the one hard requirement
    that keeps the link alive.
-5. Logs the host's commands (`SetDetect` / `SetClubInfo` / `SetBallType`).
+5. Logs the host's commands (`SetDetect` / `SetClubInfo` / `SetBallType` /
+   `SetShotContext`), and acknowledges `SetStrictMode`.
 
 ### Build & run
 
@@ -49,9 +50,9 @@ identical.
 // a reader can find/resync to frame boundaries and reject non-PPConnect data.
 static const uint8_t MAGIC0 = 0x50, MAGIC1 = 0x4C, WIRE_VERSION = 1;
 enum : uint8_t {
-    MSG_HELLO = 0x01, MSG_HEARTBEAT = 0x02, MSG_BALL = 0x10, MSG_CLUB = 0x11,
+    MSG_HELLO = 0x01, MSG_HEARTBEAT = 0x02, MSG_STRICTACK = 0x04, MSG_BALL = 0x10, MSG_CLUB = 0x11,
     MSG_READY = 0x12, MSG_ERROR = 0x1F, MSG_HELLOACK = 0x81, MSG_PING = 0x82,
-    MSG_SETCLUB = 0x90, MSG_SETDETECT = 0x91, MSG_SETBALL = 0x92
+    MSG_SETCLUB = 0x90, MSG_SETDETECT = 0x91, MSG_SETBALL = 0x92, MSG_SETSHOT = 0x93, MSG_SETSTRICT = 0x94
 };
 
 // ---- CRC32C: catches corrupted/truncated frames so they're dropped, not
@@ -76,6 +77,11 @@ static void putU32(std::vector<uint8_t>& v, uint32_t x) {
 }
 static void putF32(std::vector<uint8_t>& v, float f) {
     uint32_t bits; std::memcpy(&bits, &f, 4); putU32(v, bits); // IEEE-754 float32
+}
+static float getF32(const std::vector<uint8_t>& p, size_t at) {
+    uint32_t bits = (uint32_t)p[at] | ((uint32_t)p[at + 1] << 8)
+                  | ((uint32_t)p[at + 2] << 16) | ((uint32_t)p[at + 3] << 24);
+    float f; std::memcpy(&f, &bits, 4); return f;
 }
 static void putStr(std::vector<uint8_t>& v, const std::string& s) {
     v.push_back((uint8_t)s.size());                 // uint8 length prefix
@@ -197,6 +203,14 @@ int main() {
                 printf("host: SetClubInfo\n");
             } else if (type == MSG_SETBALL) {
                 printf("host: SetBallType\n");
+            } else if (type == MSG_SETSHOT) {      // distance to the target in metres; <= 0 = unknown
+                if (payload.size() >= 4) printf("host: SetShotContext %.1f m\n", getF32(payload, 0));
+            } else if (type == MSG_SETSTRICT) {    // an event or tournament round: measured data only
+                // 1 = accepted. A device that cannot switch off interpolation or clamping must send 0 and a
+                // reason; the host then closes the link and takes no shots from it.
+                std::vector<uint8_t> p; p.push_back(1); putStr(p, "");
+                sendAll(fd, frame(MSG_STRICTACK, p));
+                printf("host: SetStrictMode %d -> accepted\n", payload.empty() ? -1 : payload[0]);
             }
         }
     }
@@ -211,6 +225,14 @@ int main() {
   struck, not on handshake. Increment `ShotId` per swing; a `ClubData` must reuse
   its `BallData`'s `ShotId`.
 - Send only the fields you measure: clear the corresponding `ValidMask` bit and
-  the host fills gaps (e.g. it derives spin axis / total spin if you dont send them from back+side).
+  the host fills gaps (e.g. it derives spin axis / total spin if you don't send them from back+side).
+- `SetShotContext` arrives just before each `SetDetect(1)` with the distance to the
+  pin (or drill target) in metres. Use it to pick a short-game capture mode if
+  your device has one; ignore it otherwise.
+- `SetStrictMode` (0x94) arrives after the handshake whenever an event or
+  tournament round is in progress, and again after every reconnect. Answer with
+  `StrictModeAck` (0x04) within 5 s: `1` promises measured data only (no
+  clamping, smoothing, interpolation or synthesised fields); `0` plus a reason
+  if you cannot, in which case the host drops the link.
 - Push a `ReadyState` (0x12) whenever ball detection changes.
 - Keep answering `Ping` — >8 s of silence drops the link.

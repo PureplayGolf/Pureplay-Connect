@@ -18,7 +18,8 @@ What this example does, in order:
    (`BallData` + `ClubData`).
 4. Replies to every `Ping` with a `Heartbeat` — the one hard requirement that
    keeps the link alive.
-5. Logs the host's commands (`SetDetect` / `SetClubInfo` / `SetBallType`).
+5. Logs the host's commands (`SetDetect` / `SetClubInfo` / `SetBallType` /
+   `SetShotContext`), and acknowledges `SetStrictMode`.
 
 ### Run
 
@@ -39,8 +40,9 @@ const net = require('net');
 // a reader can find/resync to frame boundaries and reject non-PPConnect data.
 const MAGIC0 = 0x50, MAGIC1 = 0x4C, WIRE_VERSION = 1;
 const MSG = {
-  HELLO: 0x01, HEARTBEAT: 0x02, BALL: 0x10, CLUB: 0x11, READY: 0x12,
+  HELLO: 0x01, HEARTBEAT: 0x02, STRICTACK: 0x04, BALL: 0x10, CLUB: 0x11, READY: 0x12,
   ERROR: 0x1F, HELLOACK: 0x81, PING: 0x82, SETCLUB: 0x90, SETDETECT: 0x91, SETBALL: 0x92,
+  SETSHOT: 0x93, SETSTRICT: 0x94,
 };
 
 // ---- CRC32C: catches corrupted/truncated frames so they're dropped, not
@@ -134,7 +136,7 @@ sock.on('data', (chunk) => {
     const want = crc32c(buf.slice(0, 7 + len));
     const got = buf.readUInt32LE(7 + len);
     const type = buf[4];
-    // const payload = buf.slice(7, 7 + len);  // (decode here if you consume host data)
+    const payload = buf.slice(7, 7 + len);
     buf = buf.slice(total);                                      // consume the frame
 
     if (want !== got) { console.log('bad crc, dropped'); continue; }
@@ -152,6 +154,16 @@ sock.on('data', (chunk) => {
     } else if (type === MSG.SETDETECT)  { console.log('host: SetDetect'); }
     else if (type === MSG.SETCLUB) { console.log('host: SetClubInfo'); }
     else if (type === MSG.SETBALL) { console.log('host: SetBallType'); }
+    else if (type === MSG.SETSHOT && payload.length >= 4) {
+      // Distance to the target in metres; <= 0 means unknown.
+      console.log('host: SetShotContext', payload.readFloatLE(0).toFixed(1), 'm');
+    }
+    else if (type === MSG.SETSTRICT) {
+      // An event or tournament round: measured data only. 1 = accepted; a device that
+      // cannot comply sends 0 + a reason and the host closes the link.
+      sock.write(frame(MSG.STRICTACK, Buffer.concat([Buffer.from([1]), pstr('')])));
+      console.log('host: SetStrictMode', payload[0], '-> accepted');
+    }
   }
 });
 
@@ -166,5 +178,13 @@ sock.on('error', (e) => console.log('error:', e.message));
   its `BallData`'s `shotId`.
 - Send only the fields you measure: clear the corresponding `ValidMask` bit and
   the host fills gaps (e.g. it derives spin axis / total spin from back+side).
+- `SetShotContext` arrives just before each `SetDetect(1)` with the distance to the
+  pin (or drill target) in metres. Use it to pick a short-game capture mode if
+  your device has one; ignore it otherwise.
+- `SetStrictMode` (0x94) arrives after the handshake whenever an event or
+  tournament round is in progress, and again after every reconnect. Answer with
+  `StrictModeAck` (0x04) within 5 s: `1` promises measured data only (no
+  clamping, smoothing, interpolation or synthesised fields); `0` plus a reason
+  if you cannot, in which case the host drops the link.
 - Push a `ReadyState` (0x12) whenever ball detection changes.
 - Keep answering `Ping` — >8 s of silence drops the link.
