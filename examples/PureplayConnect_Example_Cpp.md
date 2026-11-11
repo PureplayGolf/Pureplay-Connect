@@ -126,7 +126,7 @@ static std::vector<uint8_t> buildBall(uint32_t shotId) {
     putF32(p, 2500.0f);  // TotalSpinRPM
     putF32(p, 2450.0f);  // BackSpinRPM
     putF32(p, -300.0f);  // SideSpinRPM
-    putF32(p, 6.98f);    // SpinAxisDeg
+    putF32(p, -6.98f);   // SpinAxisDeg
     return frame(MSG_BALL, p);
 }
 static std::vector<uint8_t> buildClub(uint32_t shotId) {

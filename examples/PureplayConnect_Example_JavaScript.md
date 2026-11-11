@@ -102,7 +102,7 @@ function buildBall(shotId) {
   head.writeUInt32LE(shotId, 0);
   head.writeUInt16LE(0x7F, 4);     // ValidMask: all 7 ball fields present
   //          speed  VLA   HLA   total  back   side  axis
-  const body = floats([64.0, 12.5, -1.5, 2500, 2450, -300, 6.98]);
+  const body = floats([64.0, 12.5, -1.5, 2500, 2450, -300, -6.98]);
   return frame(MSG.BALL, Buffer.concat([head, body]));
 }
 function buildClub(shotId) {

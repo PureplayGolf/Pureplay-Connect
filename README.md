@@ -40,13 +40,18 @@ data to Pureplay over TCP on port 9760.
   - face impact point - millimetres from the sweet spot
 - Sign conventions:
 
-  | Quantity | Positive means |
-  |---|---|
-  | HLA, FaceAngle, ClubPath | right of the target line |
-  | VLA, AttackAngle | upward |
-  | SpinAxis | tilted right (fade/slice); 0 = pure backspin, +/-90 = pure sidespin |
-  | ImpactPointX | toward the toe (heel is negative) |
-  | ImpactPointY | above face centre (below is negative) |
+  | Quantity | Negative means | Positive means |
+  |---|---|---|
+  | HLA, FaceAngle, ClubPath | left of the target line | right of the target line |
+  | VLA, AttackAngle | downward | upward |
+  | BackSpinRPM | topspin | backspin |
+  | SideSpinRPM | curves left (draw/hook) | curves right (fade/slice) |
+  | SpinAxis | tilted left (draw/hook) | tilted right (fade/slice) |
+  | ImpactPointX | toward the heel | toward the toe |
+  | ImpactPointY | below face centre | above face centre |
+
+  SpinAxis 0 = pure backspin, -90 / +90 = pure left / right sidespin.
+  TotalSpinRPM is a magnitude and is never negative.
 
 - Strings: a single length byte (0 to 255) followed by that many UTF-8 bytes.
   No null terminator.
@@ -381,15 +386,16 @@ Club -
 Byte accurate frames (spaces added for readability). All values little endian.
 
 BallData - ShotId 1, all fields valid (mask 0x007F), BallSpeed 64.0 m/s, VLA
-12.5, HLA -1.5, TotalSpin 2500, BackSpin 2450, SideSpin -300, SpinAxis 6.98:
+12.5, HLA -1.5, TotalSpin 2500, BackSpin 2450, SideSpin -300, SpinAxis -6.98
+(a slight draw: launched left, spin axis tilted left):
 
 ```
 50 4C 01 00 10 22 00 01 00 00 00 7F 00 00 00 80 42 00 00 48 41
-00 00 C0 BF 00 40 1C 45 00 20 19 45 00 00 96 C3 29 5C DF 40 0A 14 D6 31
+00 00 C0 BF 00 40 1C 45 00 20 19 45 00 00 96 C3 29 5C DF C0 72 2F 20 B3
 ```
 
 50 4C magic, 01 version, 00 flags, 10 type, 22 00 length = 34, payload (34
-bytes), 0A 14 D6 31 CRC32C.
+bytes), 72 2F 20 B3 CRC32C.
 
 ClubData - ShotId 1, all valid (mask 0x00FF), ClubHeadSpeed 47.5, Smash 1.347,
 DynamicLoft 14.2, FaceAngle -0.8, ClubPath 2.1, AttackAngle -3.4, ImpactX 5.0 mm,

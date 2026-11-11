@@ -87,7 +87,7 @@ def build_heartbeat() -> bytes:
 def build_ball(shot_id: int) -> bytes:
     payload = struct.pack("<IH", shot_id, 0x7F)   # ShotId + ValidMask (all 7 fields)
     #                       speed  VLA   HLA   total   back    side   axis
-    payload += struct.pack("<7f", 64.0, 12.5, -1.5, 2500.0, 2450.0, -300.0, 6.98)
+    payload += struct.pack("<7f", 64.0, 12.5, -1.5, 2500.0, 2450.0, -300.0, -6.98)
     return frame(BALL, payload)
 
 
